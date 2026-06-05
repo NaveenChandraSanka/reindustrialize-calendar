@@ -318,6 +318,42 @@
     display: grid; place-items: center; font-weight: 500;
   }
 
+  /* ---------- View toggle (top-right pill) ---------- */
+  .view-pill { background: transparent; cursor: pointer; font-family: inherit; }
+  .view-pill:hover { background: var(--surface-2); color: var(--text); }
+  .view-pill.active { background: var(--surface-2); color: var(--text); border-color: var(--line-strong); }
+
+  /* ---------- Agenda / list view ---------- */
+  .list-head { margin-bottom: 6px; }
+  .list-head .lh-title { font-size: 17px; font-weight: 500; display: flex; align-items: center; gap: 9px; }
+  .list-head .lh-title .count {
+    font-size: 11px; color: var(--text-dim); background: var(--surface-2);
+    border-radius: 100px; padding: 1px 9px; font-weight: 400;
+  }
+  .list-head .lh-sub { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+  .day-group { margin-top: 14px; }
+  .dg-head {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--text-faint); padding: 5px 2px 4px; position: sticky; top: 0;
+    background: var(--surface); z-index: 2;
+  }
+  .list-row {
+    display: grid; grid-template-columns: 10px 56px 1fr; align-items: start;
+    gap: 10px; padding: 8px; border-radius: 8px; cursor: pointer;
+    transition: background .1s ease;
+  }
+  .list-row:hover { background: var(--surface-2); }
+  .list-row.active { background: rgba(138,180,248,0.16); }
+  .list-row .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; }
+  .list-row .lr-time { color: var(--text-dim); font-size: 11.5px; margin-top: 1px; white-space: nowrap; }
+  .list-row .lr-title { font-size: 13px; line-height: 1.3; }
+  .p-back {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: transparent; border: none; color: var(--text-dim);
+    font-size: 13px; cursor: pointer; font-family: inherit; padding: 0;
+  }
+  .p-back:hover { color: var(--text); }
+
   ::-webkit-scrollbar { width: 12px; height: 12px; }
   ::-webkit-scrollbar-thumb { background: #3a3b3d; border-radius: 10px; border: 3px solid var(--surface); }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -333,7 +369,7 @@
     <button class="btn" id="today">Today</button>
     <h1 id="title"><b>June</b> 2026</h1>
     <div class="spacer"></div>
-    <div class="view-pill">Week</div>
+    <button class="view-pill" id="viewToggle" title="Show or hide the event list">Week</button>
   </div>
 
   <div class="shell">
@@ -579,7 +615,7 @@ function render(){
       const chip = document.createElement("div");
       chip.className = `chip c-${ev.color}`;
       chip.textContent = ev.title;
-      chip.onclick = ()=> openPanel(ev);
+      chip.onclick = (e)=>{ e.stopPropagation(); selectEvent(ev); };
       cell.appendChild(chip);
     });
     allday.appendChild(cell);
@@ -619,7 +655,8 @@ function render(){
     const dayEvents = layout(timed.filter(e=>e.day===i));
     dayEvents.forEach(ev=>{
       const el = document.createElement("div");
-      el.className = `event c-${ev.color}` + (ev.selected?" selected":"");
+      el.className = `event c-${ev.color}` + (ev===selectedEv?" selected":"");
+      ev._el = el;
       const H = Math.max(Math.min(ev.end,1440)-ev.start,18)*PX_PER_MIN - 2;
       el.style.top = (ev.start*PX_PER_MIN) + "px";
       el.style.height = H + "px";
@@ -631,7 +668,7 @@ function render(){
       el.innerHTML = `<div class="e-title">${blockTitle(ev.title)}</div>`
                    + `<div class="e-time">${fmtRange(ev.start, ev.end)}</div>`;
       el.title = `${blockTitle(ev.title)} · ${fmtRange(ev.start, ev.end)}`;  // native fallback tooltip
-      el.onclick = (e)=>{ e.stopPropagation(); selectEvent(ev, el); };
+      el.onclick = (e)=>{ e.stopPropagation(); selectEvent(ev); };
       el._ev = ev;
       col.appendChild(el);
     });
@@ -660,20 +697,90 @@ function render(){
 const panel = document.getElementById("panel");
 const panelInner = document.getElementById("panelInner");
 
-function selectEvent(ev, el){
-  document.querySelectorAll(".event.selected").forEach(n=>{ if(n!==el) n.classList.remove("selected"); });
-  if (el) el.classList.add("selected");
-  openPanel(ev);
-}
+let selectedEv = null;    // currently focused event (null = browsing the list)
+let sidebarOpen = true;   // is the right sidebar showing
+let panelMode = "list";   // "list" | "detail"
+const viewToggle = document.getElementById("viewToggle");
 
 const SWATCH = { busy:"#b06a45", blue:"#6f9be0", lav:"#9b98d8", purple:"#8f8de0",
                  green:"#4caf6e", teal:"#3fa6a6", orange:"#d28a3e" };
 
-function openPanel(ev){
-  const dateLabel = (()=>{
-    const d = addDays(viewStart, ev.day);
-    return `${DOW[ev.day].charAt(0)+DOW[ev.day].slice(1).toLowerCase()} ${MONTHS[d.getMonth()].slice(0,3)} ${d.getDate()}`;
-  })();
+function dayName(i){ return DOW[i].charAt(0) + DOW[i].slice(1).toLowerCase(); }
+
+function ensureSidebar(open){
+  sidebarOpen = open;
+  panel.classList.toggle("open", open);
+  if (!open) viewToggle.classList.remove("active");
+}
+
+/* ---- click an event (grid OR list): focus it on the calendar + show its detail ---- */
+function selectEvent(ev){
+  selectedEv = ev;
+  if (!sameWeekAsDemo()){           // a list item from another week → jump back first
+    viewStart = new Date(WEEK_START);
+    render();                        // render() re-applies the selection ring + ev._el
+  } else {
+    document.querySelectorAll(".event.selected").forEach(n=>n.classList.remove("selected"));
+    if (ev._el) ev._el.classList.add("selected");
+  }
+  ensureSidebar(true);
+  renderDetail(ev);
+  if (!ev.allDay){
+    document.getElementById("gridscroll")
+      .scrollTo({ top: Math.max(0, ev.start*PX_PER_MIN - 120), behavior: "smooth" });
+  }
+}
+
+/* ---- click away / back: return to the plain agenda list ---- */
+function deselect(){
+  selectedEv = null;
+  document.querySelectorAll(".event.selected").forEach(n=>n.classList.remove("selected"));
+  if (sidebarOpen) renderList();
+}
+
+/* ---- the agenda list — default state when nothing is selected ---- */
+function renderList(){
+  panelMode = "list";
+  viewToggle.classList.add("active");
+  const timed = EVENTS.filter(e=>!e.allDay);
+  panelInner.innerHTML = "";
+
+  const head = document.createElement("div");
+  head.className = "list-head";
+  head.innerHTML = `<div class="lh-title">All events <span class="count">${timed.length}</span></div>
+                    <div class="lh-sub">Click an event to open it on the calendar</div>`;
+  panelInner.appendChild(head);
+
+  for (let i=0;i<7;i++){
+    const evs = timed.filter(e=>e.day===i).sort((a,b)=> a.start-b.start || a.end-b.end);
+    if (!evs.length) continue;
+    const d = addDays(WEEK_START, i);
+    const grp = document.createElement("div");
+    grp.className = "day-group";
+    const dh = document.createElement("div");
+    dh.className = "dg-head";
+    dh.textContent = `${dayName(i)} · ${MONTHS[d.getMonth()].slice(0,3)} ${d.getDate()}`;
+    grp.appendChild(dh);
+    evs.forEach(ev=>{
+      const row = document.createElement("div");
+      row.className = "list-row" + (ev===selectedEv ? " active" : "");
+      row.innerHTML = `<span class="dot" style="background:${SWATCH[ev.color]||"#888"}"></span>
+                       <span class="lr-time">${fmtTime(ev.start)}</span>
+                       <span class="lr-title">${blockTitle(ev.title)}</span>`;
+      row.onclick = (e)=>{ e.stopPropagation(); selectEvent(ev); };
+      grp.appendChild(row);
+    });
+    panelInner.appendChild(grp);
+  }
+}
+
+/* ---- single-event detail — shown when one event is selected ---- */
+function renderDetail(ev){
+  panelMode = "detail";
+  viewToggle.classList.remove("active");
+
+  const d = addDays(WEEK_START, ev.day);
+  const dateLabel = `${dayName(ev.day)} ${MONTHS[d.getMonth()].slice(0,3)} ${d.getDate()}`;
 
   let when;
   if (ev.allDay){
@@ -691,12 +798,9 @@ function openPanel(ev){
       <div class="organizer-av">${ORG.split(" ").map(s=>s[0]).slice(0,1).join("")}</div>
       <div><div>${ev.organizer||ORG}</div><div class="p-sub">Organizer</div></div>
     </div>`;
-
   rows += `<div class="p-row dim"><div class="ic">📝</div><div>Add AI meeting notes</div></div>`;
-
   if (ev.location)
     rows += `<div class="p-row"><div class="ic">📍</div><div>${ev.location}</div></div>`;
-
   if (ev.links && ev.links.length){
     rows += `<div class="p-sep"></div>`;
     ev.links.forEach(l=>{
@@ -704,11 +808,9 @@ function openPanel(ev){
       rows += `<div class="p-row"><div class="ic">🔗</div><div><a href="${l}" target="_blank" rel="noopener">${short}</a></div></div>`;
     });
   }
-
   if (ev.desc){
     rows += `<div class="p-sep"></div><div class="p-row"><div class="ic">≡</div><div class="p-desc">${ev.desc}</div></div>`;
   }
-
   rows += `<div class="p-sep"></div>`;
   rows += `<div class="p-row"><div class="ic">📅</div><div>${ev.calEmail||CAL_EMAIL}</div></div>`;
   rows += `<div class="p-row dim"><div class="ic"></div>
@@ -720,20 +822,16 @@ function openPanel(ev){
 
   panelInner.innerHTML = `
     <div class="p-top">
-      <span class="lbl">Event</span>
-      <button class="icon-btn" id="closePanel" title="Close">✕</button>
+      <button class="p-back" id="backToList">‹ All events</button>
+      <button class="icon-btn" id="closePanel" title="Back to list">✕</button>
     </div>
     <h2><span class="swatch" style="background:${SWATCH[ev.color]||"#888"}"></span><span>${ev.title}</span></h2>
     <div class="p-when">${when}</div>
     ${rows}
   `;
-  document.getElementById("closePanel").onclick = closePanel;
-  panel.classList.add("open");
-}
-
-function closePanel(){
-  panel.classList.remove("open");
-  document.querySelectorAll(".event.selected").forEach(n=>n.classList.remove("selected"));
+  document.getElementById("backToList").onclick = deselect;
+  document.getElementById("closePanel").onclick = deselect;
+  panelInner.scrollTop = 0;
 }
 
 /* ============================================================
@@ -743,6 +841,15 @@ document.getElementById("prev").onclick  = ()=>{ viewStart = addDays(viewStart,-
 document.getElementById("next").onclick  = ()=>{ viewStart = addDays(viewStart, 7); render(); };
 document.getElementById("today").onclick = ()=>{ viewStart = new Date(WEEK_START); render(); };
 
+// "Week" pill toggles the agenda: show the compact list, or hide the sidebar to get just the calendar
+viewToggle.onclick = ()=>{
+  if (sidebarOpen && panelMode === "list"){ ensureSidebar(false); }
+  else { ensureSidebar(true); deselect(); }   // deselect() renders the list now that the sidebar is open
+};
+
+// click anywhere on empty calendar space → deselect, back to the list
+document.getElementById("gridscroll").addEventListener("click", deselect);
+
 /* ============================================================
    Init
    ============================================================ */
@@ -751,9 +858,9 @@ render();
 document.getElementById("gridscroll").scrollTop = 6 * HOUR_H;
 // refresh the now-line every minute (only when today is actually in view)
 setInterval(()=>{ if (todayInView()) render(); }, 60000);
-// auto-open the official summit Day 1 by default
-const featured = EVENTS.find(e=>e.selected);
-if (featured) openPanel(featured);
+// default state: nothing selected → show the whole agenda list on the side
+ensureSidebar(true);
+renderList();
 </script>
 </body>
 </html>
