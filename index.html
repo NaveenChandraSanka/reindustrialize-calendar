@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Calendar — June 2026</title>
+<style>
+  :root {
+    --bg: #131314;
+    --surface: #1e1f20;
+    --surface-2: #28292b;
+    --line: rgba(255, 255, 255, 0.07);
+    --line-strong: rgba(255, 255, 255, 0.12);
+    --text: #e3e3e3;
+    --text-dim: #9aa0a6;
+    --text-faint: #6f7479;
+    --accent: #8ab4f8;
+    --now: #ea4335;
+    --hour-h: 54px;        /* height of one hour row */
+    --gutter-w: 64px;      /* left time-label column width */
+    --panel-w: 420px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Google Sans", "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar h1 {
+    font-size: 21px;
+    font-weight: 400;
+    margin: 0;
+    letter-spacing: .2px;
+  }
+  .topbar h1 b { font-weight: 500; }
+  .nav { display: flex; align-items: center; gap: 4px; }
+  .btn {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line-strong);
+    border-radius: 100px;
+    padding: 7px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .icon-btn {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 18px;
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+  .spacer { flex: 1; }
+  .view-pill {
+    border: 1px solid var(--line-strong);
+    border-radius: 100px;
+    padding: 7px 16px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  /* ---------- Layout shell ---------- */
+  .shell { position: relative; display: flex; height: calc(100% - 60px); overflow: hidden; }
+  .cal { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* ---------- Day header row ---------- */
+  .dayhead {
+    display: grid;
+    grid-template-columns: var(--gutter-w) repeat(7, 1fr);
+    border-bottom: 1px solid var(--line);
+    padding-right: 14px; /* offset for scrollbar in grid below */
+  }
+  .dayhead .corner { }
+  .dh {
+    text-align: center;
+    padding: 8px 0 6px;
+    border-left: 1px solid var(--line);
+  }
+  .dh .dow { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; }
+  .dh .dnum {
+    font-size: 22px;
+    font-weight: 400;
+    margin-top: 3px;
+    width: 38px; height: 38px;
+    line-height: 38px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dh.today .dow { color: var(--accent); }
+  .dh.today .dnum { background: var(--accent); color: #18191b; font-weight: 500; }
+
+  /* ---------- All-day row ---------- */
+  .allday {
+    display: grid;
+    grid-template-columns: var(--gutter-w) repeat(7, 1fr);
+    border-bottom: 1px solid var(--line-strong);
+    min-height: 30px;
+    padding-right: 14px;
+  }
+  .allday .label {
+    font-size: 10px;
+    color: var(--text-faint);
+    text-align: right;
+    padding: 6px 8px 0 0;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+  }
+  .allday .cell {
+    border-left: 1px solid var(--line);
+    padding: 4px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .chip {
+    font-size: 11.5px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+
+  /* ---------- Scrollable time grid ---------- */
+  .gridscroll { flex: 1; overflow-y: auto; }
+  .grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--gutter-w) repeat(7, 1fr);
+  }
+  .gutter { position: relative; }
+  .hour-label {
+    position: absolute;
+    right: 8px;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    transform: translateY(-6px);
+    white-space: nowrap;
+  }
+  .daycol {
+    position: relative;
+    border-left: 1px solid var(--line);
+  }
+  .hour-line {
+    position: absolute;
+    left: 0; right: 0;
+    border-top: 1px solid var(--line);
+  }
+  .half-line {
+    position: absolute;
+    left: 0; right: 0;
+    border-top: 1px dashed rgba(255,255,255,0.035);
+  }
+
+  /* ---------- Events ---------- */
+  .event {
+    position: absolute;
+    border-radius: 6px;
+    padding: 3px 6px;
+    overflow: hidden;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: box-shadow .12s ease, filter .12s ease;
+    line-height: 1.25;
+  }
+  .event:hover { filter: brightness(1.12); z-index: 50 !important; }
+  .event.selected {
+    box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #ffffff;
+    z-index: 60 !important;
+  }
+  .event .e-title {
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .event .e-time { font-size: 11px; opacity: .85; }
+  .event.short { padding-top: 1px; }
+  .event.short .e-title { display: inline; }
+  .event.short .e-time { display: inline; margin-left: 4px; }
+
+  /* color variants */
+  .c-busy   { background: rgba(123, 72, 48, 0.5);  color: #e7c3ad; border-left-color: #b06a45; }
+  .c-blue   { background: #3b577f;                 color: #dce8fb; border-left-color: #6f9be0; }
+  .c-lav    { background: rgba(118,116,168,0.42);  color: #d8d7f2; border-left-color: #9b98d8; }
+  .c-purple { background: rgba(95,93,164,0.5);     color: #dcdbf6; border-left-color: #8f8de0; }
+  .c-green  { background: rgba(58,110,79,0.42);    color: #cdebd6; border-left-color: #4caf6e; }
+  .c-teal   { background: rgba(38,108,108,0.42);   color: #c6e9e9; border-left-color: #3fa6a6; }
+  .c-orange { background: rgba(150,96,40,0.45);    color: #f0cfa3; border-left-color: #d28a3e; }
+
+  /* ---------- Now line ---------- */
+  .now-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 0;
+    border-top: 2px solid var(--now);
+    z-index: 70;
+    pointer-events: none;
+  }
+  .now-line::before {
+    content: "";
+    position: absolute;
+    left: -5px; top: -6px;
+    width: 11px; height: 11px;
+    background: var(--now);
+    border-radius: 50%;
+  }
+  .now-label {
+    position: absolute;
+    left: 6px;
+    transform: translateY(-50%);
+    background: var(--now);
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    z-index: 71;
+    pointer-events: none;
+  }
+
+  /* ---------- Detail panel ---------- */
+  /* Wide screens: panel pushes the grid (both visible, like GCal desktop). */
+  .panel {
+    width: var(--panel-w);
+    flex-shrink: 0;
+    border-left: 1px solid var(--line-strong);
+    background: var(--surface);
+    margin-right: calc(-1 * var(--panel-w));
+    transform: translateX(100%);
+    transition: margin-right .22s ease, transform .22s ease;
+    overflow-y: auto;
+  }
+  .panel.open { margin-right: 0; transform: translateX(0); }
+
+  /* Narrow screens: panel floats as an overlay so day columns never crush. */
+  @media (max-width: 1200px) {
+    .panel {
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      margin-right: 0;
+      max-width: 88vw;
+      box-shadow: -18px 0 40px rgba(0,0,0,0.45);
+      z-index: 200;
+    }
+  }
+  .panel-inner { padding: 22px 26px 40px; }
+  .panel .p-top {
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--text-dim);
+    margin-bottom: 18px;
+  }
+  .panel .p-top .lbl { font-size: 13px; }
+  .panel h2 {
+    font-size: 21px; font-weight: 400; margin: 0 0 4px;
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .swatch { width: 13px; height: 13px; border-radius: 4px; margin-top: 7px; flex-shrink: 0; }
+  .p-when { color: var(--text-dim); font-size: 14px; margin: 2px 0 22px 25px; }
+  .p-row {
+    display: grid; grid-template-columns: 22px 1fr;
+    gap: 14px; align-items: start;
+    padding: 9px 0;
+    color: var(--text);
+    font-size: 13.5px;
+  }
+  .p-row .ic { color: var(--text-dim); font-size: 15px; line-height: 1.4; text-align: center; }
+  .p-row.dim { color: var(--text-dim); }
+  .p-row a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  .p-row a:hover { text-decoration: underline; }
+  .p-sub { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; }
+  .p-sep { border-top: 1px solid var(--line); margin: 10px 0; }
+  .p-desc { font-size: 13px; color: var(--text-dim); line-height: 1.55; white-space: pre-wrap; }
+  .organizer-av {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #8e5bd0; color: #fff; font-size: 11px;
+    display: grid; place-items: center; font-weight: 500;
+  }
+
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-thumb { background: #3a3b3d; border-radius: 10px; border: 3px solid var(--surface); }
+  ::-webkit-scrollbar-track { background: transparent; }
+  .gridscroll::-webkit-scrollbar-thumb { border-color: var(--bg); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="nav">
+      <button class="icon-btn" id="prev" title="Previous week">‹</button>
+      <button class="icon-btn" id="next" title="Next week">›</button>
+    </div>
+    <button class="btn" id="today">Today</button>
+    <h1 id="title"><b>June</b> 2026</h1>
+    <div class="spacer"></div>
+    <div class="view-pill">Week</div>
+  </div>
+
+  <div class="shell">
+    <div class="cal">
+      <div class="dayhead" id="dayhead"><div class="corner"></div></div>
+      <div class="allday" id="allday"><div class="label">All-day</div></div>
+      <div class="gridscroll" id="gridscroll">
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+
+    <aside class="panel" id="panel">
+      <div class="panel-inner" id="panelInner"></div>
+    </aside>
+  </div>
+
+<script>
+/* ============================================================
+   Event data — week of Sun May 31 → Sat Jun 6, 2026
+   day: 0=Sun..6=Sat ; times in minutes from midnight
+   ============================================================ */
+const ORG = "Naveen Chandra Sanka";
+const CAL_EMAIL = "nsanka@uci.edu";
+
+function E(day, start, end, title, color, location, desc, rsvp) {
+  const e = {
+    day, start, end, title, color, location, desc,
+    organizer: ORG, calEmail: CAL_EMAIL, status: "Busy", visibility: "Default",
+    reminder: "10 minutes before"
+  };
+  if (rsvp) e.links = [rsvp];
+  return e;
+}
+
+// Reindustrialize 2026 — Detroit · week of Sun Jun 14 → Sat Jun 20, 2026
+// day index: 0=Sun14  1=Mon15  2=Tue16  3=Wed17  4=Thu18  5=Fri19  6=Sat20
+// times in minutes from midnight (ends > 1440 cross into the next day)
+const EVENTS = [
+  // ---------- Mon Jun 15 ----------
+  E(1, 390, 450, "[RI] Builders Running Club", "teal",
+    "Detroit Riverwalk (Riverwalk start), Detroit, MI",
+    "Side-event. Host: community. Access: OPEN (no RSVP). End time est. Why Colare: informal early access to founders/operators before the summit; low-stakes networking. Source: sideguidedetroit.com"),
+  E(1, 420, 480, "[RI] Morning Session @ Bask Sauna", "teal",
+    "Bask Sauna, 2523 Russell St, Detroit, MI 48207 (Eastern Market)",
+    "Side-event. Host: Bask Sauna. Access: RSVP REQUIRED. End time est. Why Colare: small-group, high-intimacy networking with the builder crowd. Source: sideguidedetroit.com"),
+  E(1, 1020, 1380, "[RI] PRE/INDUSTRIALIZE Opening Party", "purple",
+    "23rd St. & Michigan Ave., Corktown, Detroit, MI",
+    "Side-event (party). Host: 640 Oxford + Discipulus; sponsor VulcanForms; ~10 hardtech VC co-hosts (Cantos, Riot, Trucks, Grid Capital, Acequia, CoFound, Crucible, Song United). Access: RSVP / private, ~534 going. Why Colare: HIGHEST-density founder/investor room of the week; venue is a former wartime stamping facility with hardware demos/installations — wall-to-wall companies that hire ME/EE/robotics engineers. Source: sideguidedetroit.com",
+    "https://luma.com/preindustrialize"),
+  E(1, 1080, 1260, "[RI] Cleantech Leaders Detroit Dinner", "lav",
+    "TBA (revealed on RSVP), Downtown Detroit, MI",
+    "Side-event (dinner). Host: Cleantech Leaders (Ann Davlin) + Jigar Shah (Multiplier) + Brad Markell. Access: APPROVAL REQUIRED; address revealed on RSVP. Why Colare: energy/cleantech leadership; energy-hardware firms hire EEs/MEs, though crowd skews capital/policy. Source: sideguidedetroit.com",
+    "https://luma.com/ylsg5acs"),
+  E(1, 1230, 1470, "[RI] CIV x Reindustrialize After Party", "purple",
+    "Gilly's Clubhouse, Detroit, MI",
+    "Side-event (afterparty). Host: CIV. Access: APPROVAL REQUIRED. Why Colare: late-night networking after the opening dinners; founder/operator mix. Source: sideguidedetroit.com",
+    "https://luma.com/sl7t873e"),
+
+  // ---------- Tue Jun 16 ----------
+  E(2, 540, 660, "[RI] Detroit Cup of Capital", "orange",
+    "Hangar 7, AeroNet Innovation Center, Detroit City Airport, 11499 Conner St, Detroit, MI 48213",
+    "Side-event (social). Host: Capital Factory + Cherry Bekaert + AeroNet. Access: RSVP REQUIRED — explicitly NO summit badge needed. Why Colare: BEST low-friction entry point — open to non-badge-holders; founders + investors local and visiting. Source: sideguidedetroit.com",
+    "https://luma.com/n8m1bnxp"),
+  E(2, 540, 1020, "[RI] Meet nTop @ Reindustrialize (Day 1)", "teal",
+    "Hudson's Detroit booth, 1240 Woodward Ave, Detroit, MI 48226",
+    "Exhibitor booth (by appointment / drop-in). Host: nTop — Brad Rothenberg (CEO), Kevin Chlan (CRO), Jan Vandenbrande (ex-Boeing/DARPA). Why Colare: engineering-design-software co. plus on-booth demos from Specter Aerospace + Machina Labs (hardware ICP) — reachable in person both days. Source: luma",
+    "https://luma.com/6f5wzdte"),
+  E(2, 540, 1080, "[RI] Reindustrialize Summit — Day 1 (OFFICIAL)", "blue",
+    "Hudson's Detroit, 1208 Woodward Ave, Detroit, MI 48226",
+    "CORE EVENT. Badge required — summit is SOLD OUT. End time est. Why Colare: the main stage — all confirmed speakers/exhibitors (Hadrian, Path Robotics, Formlabs, Boom, Castelion, Valar, Rainmaker, SendCutSend, Divergent, etc.) and the demo floor. Source: reindustrialize.com"),
+  E(2, 930, 990, "[RI] Grounded EV Factory Tour", "green",
+    "Grounded EV Factory, 2059 St Anne St, Detroit, MI (Corktown)",
+    "Side-event (private factory tour). Host: Grounded — Sam Shapiro (Founder & CEO, ex-SpaceX). Access: RSVP REQUIRED, private floor. Why Colare: ex-SpaceX EV manufacturer scaling domestic production — a room of hardware engineers/operators directly in ICP. Source: sideguidedetroit.com",
+    "https://luma.com/8w5ise3u"),
+  E(2, 960, 1020, "[RI] Newlab Detroit & Beacon MFG Facilities Tour", "green",
+    "Newlab at Michigan Central, 2050 15th St, Detroit, MI 48216 (Corktown)",
+    "Side-event (private tour). Host: Newlab + Beacon Manufacturing. Access: RSVP REQUIRED, space limited, free. Why Colare: 270k sqft campus home to 130+ companies in mobility/robotics/drones/energy/advanced mfg — one of the densest ICP rooms of the week. Source: sideguidedetroit.com",
+    "https://luma.com/v05vixew"),
+  E(2, 1080, 1260, "[RI] The Assembly: Reindustrialize Afters", "orange",
+    "Location TBA, Detroit, MI",
+    "Side-event (happy hour). Host: Blackwing Ventures + Initialized Capital. Access: RSVP REQUIRED. Why Colare: industrial + frontier-tech founders/operators/investors; Blackwing portfolio includes Valar Atomics, Atomic Inc, Askari Defense. Source: sideguidedetroit.com",
+    "https://luma.com/zzyiahez"),
+  E(2, 1260, 1500, "[RI] Alex Roy's HUMAN DRIVEN Party", "purple",
+    "Monarch Club, Detroit, MI",
+    "Side-event (party). Host: Alex Roy (Autonocast). Access: APPROVAL REQUIRED, 250-cap, founders/investors/leaders only — no +1s, no media, Chatham House. Why Colare: curated 250-person room in aerospace/autonomy/defense/manufacturing — high-quality ICP density. Source: sideguidedetroit.com"),
+
+  // ---------- Wed Jun 17 ----------
+  E(3, 540, 1020, "[RI] Meet nTop @ Reindustrialize (Day 2)", "teal",
+    "Hudson's Detroit booth, 1240 Woodward Ave, Detroit, MI 48226",
+    "Exhibitor booth (by appointment / drop-in) — Day 2. Host: nTop (Rothenberg/Chlan/Vandenbrande). Why Colare: see Day 1 — hardware-design + Specter Aerospace/Machina Labs demos. Source: luma",
+    "https://luma.com/6f5wzdte"),
+  E(3, 540, 1080, "[RI] Reindustrialize Summit — Day 2 (OFFICIAL)", "blue",
+    "Hudson's Detroit, 1208 Woodward Ave, Detroit, MI 48226",
+    "CORE EVENT. Badge required — SOLD OUT. End time est. Why Colare: main stage day 2 — speakers, launches, demo floor. Source: reindustrialize.com"),
+  E(3, 1020, 1260, "[RI] NOX Metals Customer Night", "orange",
+    "NOX Metals, Southwest Detroit, MI",
+    "Side-event (social). Host: NOX Metals. Access: RSVP REQUIRED. Why Colare: metal-manufacturing customer night — NOX + its manufacturer customers, all hardware-eng employers. Source: sideguidedetroit.com",
+    "https://luma.com/5vmvrnqo"),
+  E(3, 1080, 1260, "[RI] Critical Mass: Volume Six", "orange",
+    "Newlab at Michigan Central, 2050 15th St, Detroit, MI 48216 (Corktown)",
+    "Side-event (social/demos). Host: Newlab Detroit. Access: RSVP REQUIRED. Why Colare: Newlab founder demos + community — hardware founders showing real product; ICP-dense. Source: sideguidedetroit.com",
+    "https://luma.com/7r1pzqyg"),
+  E(3, 1140, 1320, "[RI] Blackwing Ventures Evening Soiree", "purple",
+    "TBD, Detroit, MI",
+    "Side-event (private dinner). Host: Blackwing Ventures (Chad Cazel). Access: INVITE ONLY (no public link; the Luma slug is dead). End time est. Why Colare: intimate founders/funds/family-offices dinner — access requires a relationship with Blackwing. Source: sideguidedetroit.com"),
+  E(3, 1260, 1380, "[RI] Happy Hour @ Nemo's", "orange",
+    "Nemo's, 1384 Michigan Ave, Detroit, MI 48226 (Corktown)",
+    "Side-event (social). Host: community. Access: OPEN (no RSVP). End time est. Why Colare: open after-hours in Corktown — casual catch-all to run into attendees. Source: sideguidedetroit.com"),
+
+  // ---------- Thu Jun 18 ----------
+  E(4, 480, 600, "[RI] Madcap Coffee Takeover", "orange",
+    "Madcap Coffee, 1413 Farmer St, Detroit, MI 48226 (Downtown)",
+    "Side-event (social). Host: community. Access: OPEN (no RSVP). End time est. Why Colare: matchmaking + demos over coffee — casual morning networking. Source: sideguidedetroit.com"),
+  E(4, 600, 660, "[RI] Shinola — Inside the Factory Floor", "green",
+    "Shinola HQ, 485 W Milwaukee Ave, Detroit, MI 48202 (New Center)",
+    "Side-event (private tour). Host: Shinola — Lane Konkel (VP Operations & Supply Chain). Access: RSVP REQUIRED. Why Colare: domestic manufacturing tour (assembly lines, leather workshop) — operators/engineers in a hardware-mfg context. Source: sideguidedetroit.com",
+    "https://luma.com/89mh9qjg"),
+];
+
+// auto-open the official summit Day 1 by default (the core event)
+EVENTS.find(e => e.title.includes("Day 1 (OFFICIAL)")).selected = true;
+
+/* ============================================================
+   Calendar constants & helpers
+   ============================================================ */
+const HOUR_H = 54;
+const PX_PER_MIN = HOUR_H / 60;
+const DOW = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
+const MONTHS = ["January","February","March","April","May","June","July",
+                "August","September","October","November","December"];
+
+// Reindustrialize 2026 week — Sunday Jun 14 → Saturday Jun 20, 2026.
+const WEEK_START = new Date(2026, 5, 14);  // month index 5 = June
+
+let viewStart = new Date(WEEK_START);
+
+function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function sameDate(a, b){
+  return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+}
+function todayInView(){
+  const now = new Date();
+  for (let i=0;i<7;i++) if (sameDate(addDays(viewStart, i), now)) return true;
+  return false;
+}
+function fmtTime(mins){
+  let h = Math.floor(mins/60), m = mins%60;
+  const ap = h >= 12 ? "PM" : "AM";
+  let hh = h % 12; if (hh === 0) hh = 12;
+  return m === 0 ? `${hh} ${ap}` : `${hh}:${String(m).padStart(2,"0")} ${ap}`;
+}
+function fmtRange(s,e){ return `${fmtTime(s)} – ${fmtTime(e % 1440)}`; }
+function durStr(s,e){
+  const t = e - s, h = Math.floor(t/60), m = t%60;
+  return [h?`${h}h`:"", m?`${m}min`:""].filter(Boolean).join(" ");
+}
+
+/* ============================================================
+   Overlap layout — Google-style column packing + expansion
+   ============================================================ */
+function collide(a,b){ return a.start < b.end && b.start < a.end; }
+
+function layout(events){
+  const evs = [...events].sort((a,b)=> a.start-b.start || a.end-b.end);
+  let columns = [], lastEnd = null;
+
+  function flush(cols){
+    const n = cols.length;
+    cols.forEach((col, ci) => {
+      col.forEach(ev => {
+        // expand right until blocked
+        let span = 1;
+        for (let k = ci+1; k < n; k++){
+          if (cols[k].some(e => collide(e, ev))) break;
+          span++;
+        }
+        ev._left = ci / n;
+        ev._width = span / n;
+      });
+    });
+  }
+
+  evs.forEach(ev => {
+    if (lastEnd !== null && ev.start >= lastEnd){ flush(columns); columns = []; lastEnd = null; }
+    let placed = false;
+    for (const col of columns){
+      if (!collide(col[col.length-1], ev)){ col.push(ev); placed = true; break; }
+    }
+    if (!placed) columns.push([ev]);
+    lastEnd = (lastEnd === null) ? ev.end : Math.max(lastEnd, ev.end);
+  });
+  if (columns.length) flush(columns);
+  return evs;
+}
+
+/* ============================================================
+   Render
+   ============================================================ */
+const grid = document.getElementById("grid");
+const dayhead = document.getElementById("dayhead");
+const allday = document.getElementById("allday");
+
+function sameWeekAsDemo(){ return viewStart.getTime() === WEEK_START.getTime(); }
+
+function render(){
+  // ----- Title -----
+  const end = addDays(viewStart, 6);
+  let titleHtml;
+  if (viewStart.getMonth() === end.getMonth()){
+    titleHtml = `<b>${MONTHS[viewStart.getMonth()]}</b> ${viewStart.getFullYear()}`;
+  } else {
+    titleHtml = `<b>${MONTHS[viewStart.getMonth()].slice(0,3)} – ${MONTHS[end.getMonth()].slice(0,3)}</b> ${end.getFullYear()}`;
+  }
+  document.getElementById("title").innerHTML = titleHtml;
+
+  // ----- Day header -----
+  dayhead.innerHTML = `<div class="corner"></div>`;
+  for (let i=0;i<7;i++){
+    const d = addDays(viewStart, i);
+    const isToday = sameDate(d, new Date());
+    dayhead.insertAdjacentHTML("beforeend",
+      `<div class="dh ${isToday?"today":""}">
+         <div class="dow">${DOW[i]}</div>
+         <div class="dnum">${d.getDate()}</div>
+       </div>`);
+  }
+
+  // ----- All-day row -----
+  allday.innerHTML = `<div class="label">All-day</div>`;
+  const adByDay = Array.from({length:7}, ()=>[]);
+  if (sameWeekAsDemo()) EVENTS.filter(e=>e.allDay).forEach(e=> adByDay[e.day].push(e));
+  for (let i=0;i<7;i++){
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    adByDay[i].forEach(ev=>{
+      const chip = document.createElement("div");
+      chip.className = `chip c-${ev.color}`;
+      chip.textContent = ev.title;
+      chip.onclick = ()=> openPanel(ev);
+      cell.appendChild(chip);
+    });
+    allday.appendChild(cell);
+  }
+
+  // ----- Time grid -----
+  grid.innerHTML = "";
+  grid.style.height = (HOUR_H * 24) + "px";
+
+  // gutter with hour labels
+  const gutter = document.createElement("div");
+  gutter.className = "gutter";
+  for (let h=1; h<24; h++){
+    const lab = document.createElement("div");
+    lab.className = "hour-label";
+    lab.style.top = (h*HOUR_H) + "px";
+    lab.textContent = fmtTime(h*60);
+    gutter.appendChild(lab);
+  }
+  grid.appendChild(gutter);
+
+  // day columns
+  const timed = sameWeekAsDemo() ? EVENTS.filter(e=>!e.allDay) : [];
+  for (let i=0;i<7;i++){
+    const col = document.createElement("div");
+    col.className = "daycol";
+
+    for (let h=0; h<24; h++){
+      const hl = document.createElement("div");
+      hl.className = "hour-line"; hl.style.top = (h*HOUR_H)+"px";
+      col.appendChild(hl);
+      const half = document.createElement("div");
+      half.className = "half-line"; half.style.top = (h*HOUR_H + HOUR_H/2)+"px";
+      col.appendChild(half);
+    }
+
+    const dayEvents = layout(timed.filter(e=>e.day===i));
+    dayEvents.forEach(ev=>{
+      const el = document.createElement("div");
+      const short = (ev.end - ev.start) <= 30;
+      el.className = `event c-${ev.color}` + (short?" short":"") + (ev.selected?" selected":"");
+      el.style.top = (ev.start*PX_PER_MIN) + "px";
+      el.style.height = Math.max(Math.min(ev.end,1440)-ev.start,18)*PX_PER_MIN - 2 + "px";
+      const gap = 3;
+      el.style.left = `calc(${ev._left*100}% + ${gap}px)`;
+      el.style.width = `calc(${ev._width*100}% - ${gap*2}px)`;
+      el.style.zIndex = 10 + Math.round(ev._left*10);
+      if (short){
+        el.innerHTML = `<span class="e-title">${ev.title}</span><span class="e-time">${fmtTime(ev.start)}</span>`;
+      } else {
+        el.innerHTML = `<div class="e-title">${ev.title}</div><div class="e-time">${fmtRange(ev.start,ev.end)}</div>`;
+      }
+      el.onclick = (e)=>{ e.stopPropagation(); selectEvent(ev, el); };
+      el._ev = ev;
+      col.appendChild(el);
+    });
+
+    // now line on today's column (only when the real today is in view)
+    if (sameDate(addDays(viewStart, i), new Date())){
+      const now = new Date();
+      const mins = now.getHours()*60 + now.getMinutes();
+      const line = document.createElement("div");
+      line.className = "now-line"; line.style.top = (mins*PX_PER_MIN)+"px";
+      col.appendChild(line);
+      const lab = document.createElement("div");
+      lab.className = "now-label"; lab.style.top = (mins*PX_PER_MIN)+"px";
+      lab.style.left = "-58px";
+      lab.textContent = fmtTime(mins).replace(" ","");
+      gutter.appendChild(lab);
+    }
+
+    grid.appendChild(col);
+  }
+}
+
+/* ============================================================
+   Selection + detail panel
+   ============================================================ */
+const panel = document.getElementById("panel");
+const panelInner = document.getElementById("panelInner");
+
+function selectEvent(ev, el){
+  document.querySelectorAll(".event.selected").forEach(n=>{ if(n!==el) n.classList.remove("selected"); });
+  if (el) el.classList.add("selected");
+  openPanel(ev);
+}
+
+const SWATCH = { busy:"#b06a45", blue:"#6f9be0", lav:"#9b98d8", purple:"#8f8de0",
+                 green:"#4caf6e", teal:"#3fa6a6", orange:"#d28a3e" };
+
+function openPanel(ev){
+  const dateLabel = (()=>{
+    const d = addDays(viewStart, ev.day);
+    return `${DOW[ev.day].charAt(0)+DOW[ev.day].slice(1).toLowerCase()} ${MONTHS[d.getMonth()].slice(0,3)} ${d.getDate()}`;
+  })();
+
+  let when;
+  if (ev.allDay){
+    when = `All day · ${dateLabel}`;
+  } else {
+    const endLbl = fmtTime(ev.end % 1440)
+      + (ev.end > 1440 ? ` <span style="color:var(--text-faint)">(+1 day)</span>` : "");
+    when = `${fmtTime(ev.start)} <span style="color:var(--text-faint)">→</span> ${endLbl} `
+         + `<span style="color:var(--text-faint)">${durStr(ev.start,ev.end)}</span><br>${dateLabel}`;
+  }
+
+  let rows = "";
+  rows += `
+    <div class="p-row">
+      <div class="organizer-av">${ORG.split(" ").map(s=>s[0]).slice(0,1).join("")}</div>
+      <div><div>${ev.organizer||ORG}</div><div class="p-sub">Organizer</div></div>
+    </div>`;
+
+  rows += `<div class="p-row dim"><div class="ic">📝</div><div>Add AI meeting notes</div></div>`;
+
+  if (ev.location)
+    rows += `<div class="p-row"><div class="ic">📍</div><div>${ev.location}</div></div>`;
+
+  if (ev.links && ev.links.length){
+    rows += `<div class="p-sep"></div>`;
+    ev.links.forEach(l=>{
+      const short = l.length > 46 ? l.slice(0,44)+"…" : l;
+      rows += `<div class="p-row"><div class="ic">🔗</div><div><a href="${l}" target="_blank" rel="noopener">${short}</a></div></div>`;
+    });
+  }
+
+  if (ev.desc){
+    rows += `<div class="p-sep"></div><div class="p-row"><div class="ic">≡</div><div class="p-desc">${ev.desc}</div></div>`;
+  }
+
+  rows += `<div class="p-sep"></div>`;
+  rows += `<div class="p-row"><div class="ic">📅</div><div>${ev.calEmail||CAL_EMAIL}</div></div>`;
+  rows += `<div class="p-row dim"><div class="ic"></div>
+             <div style="display:flex; gap:60px;">
+               <span>${ev.status||"Busy"}</span><span>${ev.visibility||"Default"}</span>
+             </div></div>`;
+  if (ev.reminder)
+    rows += `<div class="p-row dim"><div class="ic">🔔</div><div>${ev.reminder}</div></div>`;
+
+  panelInner.innerHTML = `
+    <div class="p-top">
+      <span class="lbl">Event</span>
+      <button class="icon-btn" id="closePanel" title="Close">✕</button>
+    </div>
+    <h2><span class="swatch" style="background:${SWATCH[ev.color]||"#888"}"></span><span>${ev.title}</span></h2>
+    <div class="p-when">${when}</div>
+    ${rows}
+  `;
+  document.getElementById("closePanel").onclick = closePanel;
+  panel.classList.add("open");
+}
+
+function closePanel(){
+  panel.classList.remove("open");
+  document.querySelectorAll(".event.selected").forEach(n=>n.classList.remove("selected"));
+}
+
+/* ============================================================
+   Navigation
+   ============================================================ */
+document.getElementById("prev").onclick  = ()=>{ viewStart = addDays(viewStart,-7); render(); };
+document.getElementById("next").onclick  = ()=>{ viewStart = addDays(viewStart, 7); render(); };
+document.getElementById("today").onclick = ()=>{ viewStart = new Date(WEEK_START); render(); };
+
+/* ============================================================
+   Init
+   ============================================================ */
+render();
+// scroll to ~6 AM so the early-morning side-events are visible
+document.getElementById("gridscroll").scrollTop = 6 * HOUR_H;
+// refresh the now-line every minute (only when today is actually in view)
+setInterval(()=>{ if (todayInView()) render(); }, 60000);
+// auto-open the official summit Day 1 by default
+const featured = EVENTS.find(e=>e.selected);
+if (featured) openPanel(featured);
+</script>
+</body>
+</html>
