@@ -179,14 +179,24 @@
   .event {
     position: absolute;
     border-radius: 6px;
-    padding: 3px 6px;
+    padding: 3px 7px;
     overflow: hidden;
     cursor: pointer;
     border-left: 3px solid transparent;
-    transition: box-shadow .12s ease, filter .12s ease;
-    line-height: 1.25;
+    transition: box-shadow .13s ease, filter .13s ease, min-width .13s ease;
+    line-height: 1.2;
   }
-  .event:hover { filter: brightness(1.12); z-index: 50 !important; }
+  /* hover = "peek": lift above neighbors, widen to a readable size, reveal full title */
+  .event:hover {
+    min-width: 174px;
+    height: auto !important;
+    min-height: var(--evh);
+    overflow: visible;
+    z-index: 200 !important;
+    filter: brightness(1.07);
+    box-shadow: 0 8px 22px rgba(0,0,0,0.55);
+  }
+  .event:hover .e-title { -webkit-line-clamp: 8; }
   .event.selected {
     box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #ffffff;
     z-index: 60 !important;
@@ -194,14 +204,21 @@
   .event .e-title {
     font-size: 12px;
     font-weight: 500;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;          /* wrap up to 3 lines, then ellipsis */
+    overflow: hidden;
+    overflow-wrap: anywhere;        /* break long words like "Reindustrialize" */
+    word-break: break-word;
+  }
+  .event .e-time {
+    font-size: 10.5px;
+    opacity: .82;
+    margin-top: 1px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .event .e-time { font-size: 11px; opacity: .85; }
-  .event.short { padding-top: 1px; }
-  .event.short .e-title { display: inline; }
-  .event.short .e-time { display: inline; margin-left: 4px; }
 
   /* color variants */
   .c-busy   { background: rgba(123, 72, 48, 0.5);  color: #e7c3ad; border-left-color: #b06a45; }
@@ -468,7 +485,14 @@ function fmtTime(mins){
   let hh = h % 12; if (hh === 0) hh = 12;
   return m === 0 ? `${hh} ${ap}` : `${hh}:${String(m).padStart(2,"0")} ${ap}`;
 }
-function fmtRange(s,e){ return `${fmtTime(s)} – ${fmtTime(e % 1440)}`; }
+function fmtRange(s,e){
+  const a = fmtTime(s), b = fmtTime(e % 1440);
+  // drop the redundant meridiem on the start when both share it: "9 – 11 AM"
+  if (a.slice(-2) === b.slice(-2)) return `${a.slice(0,-3)} – ${b}`;
+  return `${a} – ${b}`;
+}
+// "[RI] " is on every event — strip it from the grid block so the distinguishing words lead
+function blockTitle(t){ return t.replace(/^\[RI\]\s*/, ""); }
 function durStr(s,e){
   const t = e - s, h = Math.floor(t/60), m = t%60;
   return [h?`${h}h`:"", m?`${m}min`:""].filter(Boolean).join(" ");
@@ -595,19 +619,18 @@ function render(){
     const dayEvents = layout(timed.filter(e=>e.day===i));
     dayEvents.forEach(ev=>{
       const el = document.createElement("div");
-      const short = (ev.end - ev.start) <= 30;
-      el.className = `event c-${ev.color}` + (short?" short":"") + (ev.selected?" selected":"");
+      el.className = `event c-${ev.color}` + (ev.selected?" selected":"");
+      const H = Math.max(Math.min(ev.end,1440)-ev.start,18)*PX_PER_MIN - 2;
       el.style.top = (ev.start*PX_PER_MIN) + "px";
-      el.style.height = Math.max(Math.min(ev.end,1440)-ev.start,18)*PX_PER_MIN - 2 + "px";
+      el.style.height = H + "px";
+      el.style.setProperty("--evh", H + "px");   // remembered so hover can grow but never shrink
       const gap = 3;
       el.style.left = `calc(${ev._left*100}% + ${gap}px)`;
       el.style.width = `calc(${ev._width*100}% - ${gap*2}px)`;
       el.style.zIndex = 10 + Math.round(ev._left*10);
-      if (short){
-        el.innerHTML = `<span class="e-title">${ev.title}</span><span class="e-time">${fmtTime(ev.start)}</span>`;
-      } else {
-        el.innerHTML = `<div class="e-title">${ev.title}</div><div class="e-time">${fmtRange(ev.start,ev.end)}</div>`;
-      }
+      el.innerHTML = `<div class="e-title">${blockTitle(ev.title)}</div>`
+                   + `<div class="e-time">${fmtRange(ev.start, ev.end)}</div>`;
+      el.title = `${blockTitle(ev.title)} · ${fmtRange(ev.start, ev.end)}`;  // native fallback tooltip
       el.onclick = (e)=>{ e.stopPropagation(); selectEvent(ev, el); };
       el._ev = ev;
       col.appendChild(el);
